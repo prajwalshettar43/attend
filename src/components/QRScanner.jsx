@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CSVLink } from "react-csv";
 import QrScanner from "react-qr-scanner";
 
@@ -6,7 +6,91 @@ const QRScanner = () => {
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
-  const [lastScan, setLastScan] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+  const [scannerActive, setScannerActive] = useState(true);
+  const [membersIds, setMembersIds] = useState(new Set());
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      return /iphone|ipad|ipod|android|blackberry|windows phone/g.test(userAgent);
+    };
+    setIsMobile(checkMobile());
+  }, []);
+
+  // Reset scanner every second to allow continuous scanning
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setScannerActive(false);
+      setTimeout(() => setScannerActive(true), 100);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const constraints = {
+    video: {
+      facingMode: isMobile ? { exact: "environment" } : "user",
+    },
+  };
+
+  const handleScan = (scannedData) => {
+    if (!scannedData?.text) return;
+
+    setDebugMessage(`Scanned data detected: ${scannedData.text}`);
+    const parsedData = parseVCARD(scannedData.text);
+
+    if (parsedData && parsedData.membershipId) {
+      if (!membersIds.has(parsedData.membershipId)) {
+        setData((prevData) => [...prevData, parsedData]);
+        setMembersIds((prevIds) => new Set(prevIds).add(parsedData.membershipId));
+        setError("");
+      }
+    } else {
+      setError("Invalid QR code format.");
+    }
+  };
+
+  const handleError = (err) => {
+    console.error("Scanner error:", err);
+    setError(
+      isMobile
+        ? "An error occurred while accessing the camera. Please grant camera permissions and use a supported browser (Chrome, Safari, Firefox)."
+        : "An error occurred while accessing the camera. Please check camera permissions."
+    );
+    setDebugMessage("Failed to initialize scanner. Please check camera permissions.");
+  };
+
+  const parseVCARD = (scannedData) => {
+    try {
+      if (scannedData.includes("BEGIN:VCARD")) {
+        const nicknameMatch = scannedData.match(/NICKNAME:([^ ]+)/);
+        const membershipIdMatch = scannedData.match(/Member#: (\d+)/);
+
+        if (nicknameMatch && membershipIdMatch) {
+          return {
+            name: nicknameMatch[1].trim(),
+            membershipId: membershipIdMatch[1].trim(),
+          };
+        }
+      }
+
+      if (scannedData.includes("Member Name:")) {
+        const nameMatch = scannedData.match(/Member Name:([^,]+)/);
+        const memberNumberMatch = scannedData.match(/Member Number:([^,]+)/);
+
+        if (nameMatch && memberNumberMatch) {
+          return {
+            name: nameMatch[1].trim(),
+            membershipId: memberNumberMatch[1].trim(),
+          };
+        }
+      }
+    } catch (e) {
+      console.error("Error parsing scanned data:", e);
+    }
+
+    return null;
+  };
 
   const styles = {
     container: {
@@ -28,6 +112,12 @@ const QRScanner = () => {
       textAlign: "center",
       color: "#059669",
       marginBottom: "1.5rem",
+    },
+    deviceInfo: {
+      textAlign: "center",
+      color: "#4b5563",
+      marginBottom: "1rem",
+      fontSize: "0.875rem",
     },
     scannerContainer: {
       position: "relative",
@@ -87,7 +177,7 @@ const QRScanner = () => {
     td: {
       padding: "0.75rem",
       borderBottom: "1px solid #e5e7eb",
-      color:"black",
+      color: "black",
     },
     noData: {
       textAlign: "center",
@@ -111,71 +201,6 @@ const QRScanner = () => {
     },
   };
 
-  const handleScan = (scannedData) => {
-    if (scannedData?.text && scannedData.text !== lastScan) {
-      setLastScan(scannedData.text);
-      setDebugMessage(`Scanned data detected: ${scannedData.text}`);
-      const parsedData = parseVCARD(scannedData.text);
-      
-      if (parsedData && !data.some((item) => item.membershipId === parsedData.membershipId)) {
-        setData((prevData) => [...prevData, parsedData]);
-        setError("");
-      } else if (!parsedData) {
-        setError("Invalid QR code format.");
-      }
-  
-      // No need to reset `lastScan` after the scan
-    }
-  };
-  
-
-  const handleError = (err) => {
-    console.error("Scanner error:", err);
-    setError("An error occurred while accessing the camera.");
-    setDebugMessage("Failed to initialize scanner.");
-  };
-
-  const parseVCARD = (scannedData) => {
-    try {
-      // Check for VCARD format and extract NICKNAME
-      if (scannedData.includes("BEGIN:VCARD")) {
-        const nicknameMatch = scannedData.match(/NICKNAME:([^ ]+)/); // Matches "NICKNAME:VALUE"
-        const membershipIdMatch = scannedData.match(/Member#: (\d+)/); // Matches "Member#: VALUE"
-  
-        if (nicknameMatch && membershipIdMatch) {
-          const name = nicknameMatch[1].trim();
-          const membershipId = membershipIdMatch[1].trim();
-  
-          return {
-            name,
-            membershipId,
-          };
-        }
-      }
-  
-      // Check for Plain Text format
-      if (scannedData.includes("Member Name:")) {
-        const nameMatch = scannedData.match(/Member Name:([^,]+)/); // Matches "Member Name:" followed by the name until a comma
-        const memberNumberMatch = scannedData.match(/Member Number:([^,]+)/); // Matches "Member Number:" followed by the number until a comma
-  
-        if (nameMatch && memberNumberMatch) {
-          const name = nameMatch[1].trim();
-          const membershipId = memberNumberMatch[1].trim();
-  
-          return {
-            name,
-            membershipId,
-          };
-        }
-      }
-    } catch (e) {
-      console.error("Error parsing scanned data:", e);
-    }
-  
-    return null; // Return null if parsing fails
-  };
-  
-
   const headers = [
     { label: "Name", key: "name" },
     { label: "Membership ID", key: "membershipId" },
@@ -185,14 +210,20 @@ const QRScanner = () => {
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>QR Code Scanner</h1>
+        <p style={styles.deviceInfo}>
+          {isMobile ? "Using rear camera (mobile device detected)" : "Using front camera (desktop device detected)"}
+        </p>
 
         <div style={styles.scannerContainer}>
-          <QrScanner
-            delay={300}
-            style={styles.scanner}
-            onError={handleError}
-            onScan={handleScan}
-          />
+          {scannerActive && (
+            <QrScanner
+              delay={300}
+              style={styles.scanner}
+              onError={handleError}
+              onScan={handleScan}
+              constraints={constraints}
+            />
+          )}
         </div>
 
         {error && <div style={styles.errorMessage}>{error}</div>}
@@ -225,12 +256,7 @@ const QRScanner = () => {
 
           {data.length > 0 && (
             <div style={styles.buttonContainer}>
-              <CSVLink
-                data={data}
-                headers={headers}
-                filename={"Attendence_data.csv"}
-                style={styles.downloadButton}
-              >
+              <CSVLink data={data} headers={headers} filename={"Attendance.csv"} style={styles.downloadButton}>
                 Download CSV
               </CSVLink>
             </div>
