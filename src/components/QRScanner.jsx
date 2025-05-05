@@ -3,44 +3,40 @@ import { CSVLink } from "react-csv";
 import { QrReader } from "react-qr-reader";
 
 // Floating Bubble Component
-const FloatingBubble = ({ size, speed, delay, opacity, left, top }) => {
-  return (
-    <div
-      className="absolute rounded-full bg-violet-400"
-      style={{
-        width: `${size}px`,
-        height: `${size}px`,
-        opacity: opacity,
-        animation: `floatUp ${speed}s infinite ease-in-out ${delay}s`,
-        filter: "blur(1px)",
-        left: `${left}%`,
-        top: `${top}%`
-      }}
-    />
-  );
-};
+const FloatingBubble = ({ size, speed, delay, opacity, left, top }) => (
+  <div
+    className="absolute rounded-full bg-violet-400"
+    style={{
+      width: `${size}px`,
+      height: `${size}px`,
+      opacity: opacity,
+      animation: `floatUp ${speed}s infinite ease-in-out ${delay}s`,
+      filter: "blur(1px)",
+      left: `${left}%`,
+      top: `${top}%`,
+    }}
+  />
+);
 
 const QRScanner = () => {
   const [data, setData] = useState([]);
   const [error, setError] = useState("");
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
   const [isMobile, setIsMobile] = useState(false);
-  const [videoDevices, setVideoDevices] = useState([]);
-  const [rearCameraId, setRearCameraId] = useState(null);
-  const membersIdsRef = useRef(new Set());
+  const [facingMode, setFacingMode] = useState("environment"); // default to rear
   const [filename, setFilename] = useState("Attendance");
   const [description, setDescription] = useState("");
+  const membersIdsRef = useRef(new Set());
 
   const bubbles = useMemo(() => {
-    const bubblesArray = [];
-    for (let i = 0; i < 25; i++) {
+    return Array.from({ length: 25 }, (_, i) => {
       const size = Math.floor(Math.random() * 30) + 20;
       const speed = Math.floor(Math.random() * 4) + 3;
       const delay = Math.random() * 2;
       const opacity = Math.random() * 0.2 + 0.1;
       const left = Math.random() * 100;
       const top = Math.random() * 100;
-      bubblesArray.push(
+      return (
         <FloatingBubble
           key={i}
           size={size}
@@ -51,12 +47,10 @@ const QRScanner = () => {
           top={top}
         />
       );
-    }
-    return bubblesArray;
+    });
   }, []);
 
   useEffect(() => {
-    // Inject custom styles for animations
     const styleSheet = document.createElement("style");
     styleSheet.textContent = `
       @keyframes floatUp {
@@ -72,29 +66,18 @@ const QRScanner = () => {
     `;
     document.head.appendChild(styleSheet);
 
-    // Check if device is mobile
     const checkMobile = () => {
       const userAgent = navigator.userAgent.toLowerCase();
       return /iphone|ipad|ipod|android|blackberry|windows phone/g.test(userAgent);
     };
     setIsMobile(checkMobile());
-
-    // Enumerate media devices and select the rear camera if available
-    navigator.mediaDevices.enumerateDevices().then((devices) => {
-      const videoInputDevices = devices.filter(
-        (device) => device.kind === "videoinput"
-      );
-      setVideoDevices(videoInputDevices);
-
-      const rearCam = videoInputDevices.find((device) =>
-        device.label.toLowerCase().includes("back") ||
-        device.label.toLowerCase().includes("rear")
-      );
-      if (rearCam) {
-        setRearCameraId(rearCam.deviceId);
-      }
-    });
   }, []);
+
+  const constraints = useMemo(() => {
+    return isMobile
+      ? { video: { facingMode: { exact: facingMode } } }
+      : { video: true };
+  }, [isMobile, facingMode]);
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
@@ -104,11 +87,12 @@ const QRScanner = () => {
 
     if (parsedData && parsedData.membershipId) {
       if (!membersIdsRef.current.has(parsedData.membershipId)) {
-        setData((prevData) => [
-          ...prevData,
-          { ...parsedData, year: "1" }
-        ]);
+        setData((prevData) => [...prevData, { ...parsedData, year: "1" }]);
         membersIdsRef.current.add(parsedData.membershipId);
+        setScanAnimation(true);
+        setShowSuccess(true);
+        setTimeout(() => setScanAnimation(false), 1500);
+        setTimeout(() => setShowSuccess(false), 2000);
         setError("");
       } else {
         setDebugMessage(`Duplicate detected: ${parsedData.membershipId}`);
@@ -124,8 +108,7 @@ const QRScanner = () => {
     let debugMessage = "Failed to initialize scanner.";
 
     if (err.name === "NotAllowedError") {
-      errorMessage =
-        "Camera access denied. Please grant permissions in your browser settings.";
+      errorMessage = "Camera access denied. Please grant permissions in your browser settings.";
       debugMessage = "Camera permission denied.";
     } else if (err.name === "NotFoundError") {
       errorMessage = "No camera found. Please connect a camera device.";
@@ -173,12 +156,8 @@ const QRScanner = () => {
     { label: "Year", key: "year" },
   ];
 
-  const constraints = useMemo(() => {
-    if (rearCameraId) {
-      return { video: { deviceId: { exact: rearCameraId } } };
-    }
-    return { video: isMobile ? { facingMode: { exact: "environment" } } : true };
-  }, [rearCameraId, isMobile]);
+  const [scanAnimation, setScanAnimation] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   return (
     <div
@@ -191,10 +170,12 @@ const QRScanner = () => {
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {bubbles}
       </div>
+
       <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
         <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">
           QR Attendance Scanner
         </h1>
+
         <div className="mb-4 flex flex-col md:flex-row gap-4">
           <input
             type="text"
@@ -214,9 +195,24 @@ const QRScanner = () => {
 
         <p className="text-sm text-gray-400 text-center mb-2">
           {isMobile
-            ? "Using rear camera (mobile)"
+            ? `Using ${facingMode === "user" ? "front" : "rear"} camera (mobile)`
             : "Using default camera (desktop)"}
         </p>
+
+        {isMobile && (
+          <div className="text-center mb-4">
+            <button
+              onClick={() =>
+                setFacingMode((prev) =>
+                  prev === "environment" ? "user" : "environment"
+                )
+              }
+              className="bg-violet-700 hover:bg-violet-800 text-white py-1 px-4 rounded-md transition"
+            >
+              Switch to {facingMode === "environment" ? "Front" : "Rear"} Camera
+            </button>
+          </div>
+        )}
 
         <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
           <div className="absolute inset-0">
@@ -225,8 +221,6 @@ const QRScanner = () => {
               onResult={(result, error) => {
                 if (result) {
                   handleScan({ text: result.text });
-                } else if (!isMobile && error) {
-                  console.warn("Scanner warning (ignored on PC):", error.message);
                 } else if (isMobile && error) {
                   handleError(error);
                 }
@@ -236,6 +230,32 @@ const QRScanner = () => {
               ViewFinder={() => null}
             />
           </div>
+          {scanAnimation && (
+            <div
+              className="absolute left-0 right-0 bg-violet-500 h-1 w-full"
+              style={{ animation: "scan 1.5s linear" }}
+            />
+          )}
+          {showSuccess && (
+            <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+              <div className="bg-black/50 p-4 rounded-full">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-12 w-12 text-green-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -261,9 +281,7 @@ const QRScanner = () => {
                 <thead className="bg-violet-700">
                   <tr>
                     <th className="px-4 py-2 text-left text-white">Name</th>
-                    <th className="px-4 py-2 text-left text-white">
-                      Membership ID
-                    </th>
+                    <th className="px-4 py-2 text-left text-white">Membership ID</th>
                     <th className="px-4 py-2 text-left text-white">Year</th>
                   </tr>
                 </thead>
@@ -271,9 +289,7 @@ const QRScanner = () => {
                   {data.map((entry, index) => (
                     <tr key={index} className="bg-violet-800/30">
                       <td className="px-4 py-2 text-violet-100">{entry.name}</td>
-                      <td className="px-4 py-2 text-violet-100">
-                        {entry.membershipId}
-                      </td>
+                      <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
                       <td className="px-4 py-2 text-violet-100">
                         <select
                           value={entry.year || "1"}
