@@ -25,6 +25,8 @@ const QRScanner = () => {
   const [error, setError] = useState("");
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
   const [isMobile, setIsMobile] = useState(false);
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [rearCameraId, setRearCameraId] = useState(null);
   const membersIdsRef = useRef(new Set());
   const [filename, setFilename] = useState("Attendance");
   const [description, setDescription] = useState("");
@@ -54,6 +56,7 @@ const QRScanner = () => {
   }, []);
 
   useEffect(() => {
+    // Inject custom styles for animations
     const styleSheet = document.createElement("style");
     styleSheet.textContent = `
       @keyframes floatUp {
@@ -69,18 +72,29 @@ const QRScanner = () => {
     `;
     document.head.appendChild(styleSheet);
 
+    // Check if device is mobile
     const checkMobile = () => {
       const userAgent = navigator.userAgent.toLowerCase();
       return /iphone|ipad|ipod|android|blackberry|windows phone/g.test(userAgent);
     };
     setIsMobile(checkMobile());
-  }, []);
 
-  // Constraints: Use front camera for mobile, default for PC
-  const constraints = useMemo(() => ({
-    video: isMobile ? { facingMode: { exact: "environment" } } : true
-  }), [isMobile]);
-  
+    // Enumerate media devices and select the rear camera if available
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      const videoInputDevices = devices.filter(
+        (device) => device.kind === "videoinput"
+      );
+      setVideoDevices(videoInputDevices);
+
+      const rearCam = videoInputDevices.find((device) =>
+        device.label.toLowerCase().includes("back") ||
+        device.label.toLowerCase().includes("rear")
+      );
+      if (rearCam) {
+        setRearCameraId(rearCam.deviceId);
+      }
+    });
+  }, []);
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
@@ -90,12 +104,11 @@ const QRScanner = () => {
 
     if (parsedData && parsedData.membershipId) {
       if (!membersIdsRef.current.has(parsedData.membershipId)) {
-        setData((prevData) => [...prevData, { ...parsedData, year: "1" }]);
+        setData((prevData) => [
+          ...prevData,
+          { ...parsedData, year: "1" }
+        ]);
         membersIdsRef.current.add(parsedData.membershipId);
-        setScanAnimation(true);
-        setShowSuccess(true);
-        setTimeout(() => setScanAnimation(false), 1500);
-        setTimeout(() => setShowSuccess(false), 2000);
         setError("");
       } else {
         setDebugMessage(`Duplicate detected: ${parsedData.membershipId}`);
@@ -111,7 +124,8 @@ const QRScanner = () => {
     let debugMessage = "Failed to initialize scanner.";
 
     if (err.name === "NotAllowedError") {
-      errorMessage = "Camera access denied. Please grant permissions in your browser settings.";
+      errorMessage =
+        "Camera access denied. Please grant permissions in your browser settings.";
       debugMessage = "Camera permission denied.";
     } else if (err.name === "NotFoundError") {
       errorMessage = "No camera found. Please connect a camera device.";
@@ -159,19 +173,28 @@ const QRScanner = () => {
     { label: "Year", key: "year" },
   ];
 
-  const [scanAnimation, setScanAnimation] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const constraints = useMemo(() => {
+    if (rearCameraId) {
+      return { video: { deviceId: { exact: rearCameraId } } };
+    }
+    return { video: isMobile ? { facingMode: { exact: "environment" } } : true };
+  }, [rearCameraId, isMobile]);
 
   return (
-    <div className="min-h-screen p-4 overflow-hidden relative"
+    <div
+      className="min-h-screen p-4 overflow-hidden relative"
       style={{
-        background: "radial-gradient(100% 100% at 50% 0%, rgb(52, 4, 91) 0%, rgb(10, 0, 17) 80%)"
-      }}>
+        background:
+          "radial-gradient(100% 100% at 50% 0%, rgb(52, 4, 91) 0%, rgb(10, 0, 17) 80%)",
+      }}
+    >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {bubbles}
       </div>
       <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
-        <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">QR Attendance Scanner</h1>
+        <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">
+          QR Attendance Scanner
+        </h1>
         <div className="mb-4 flex flex-col md:flex-row gap-4">
           <input
             type="text"
@@ -190,7 +213,9 @@ const QRScanner = () => {
         </div>
 
         <p className="text-sm text-gray-400 text-center mb-2">
-          {isMobile ? "Using front camera (mobile)" : "Using default camera (desktop)"}
+          {isMobile
+            ? "Using rear camera (mobile)"
+            : "Using default camera (desktop)"}
         </p>
 
         <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
@@ -211,29 +236,20 @@ const QRScanner = () => {
               ViewFinder={() => null}
             />
           </div>
-          {scanAnimation && (
-            <div
-              className="absolute left-0 right-0 bg-violet-500 h-1 w-full"
-              style={{ animation: "scan 1.5s linear" }}
-            />
-          )}
-          {showSuccess && (
-            <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
-              <div className="bg-black/50 p-4 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </div>
-          )}
         </div>
 
-        {error && <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded text-center">{error}</div>}
+        {error && (
+          <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded text-center">
+            {error}
+          </div>
+        )}
         <p className="mt-2 text-center text-violet-300 text-sm">{debugMessage}</p>
 
         <div className="mt-8 bg-black bg-opacity-30 p-4 rounded-xl">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-violet-300">Scanned Entries</h2>
+            <h2 className="text-xl font-semibold text-violet-300">
+              Scanned Entries
+            </h2>
             <div className="bg-violet-900/50 text-violet-300 px-3 py-1 rounded-full text-sm">
               Total: {data.length}
             </div>
@@ -245,7 +261,9 @@ const QRScanner = () => {
                 <thead className="bg-violet-700">
                   <tr>
                     <th className="px-4 py-2 text-left text-white">Name</th>
-                    <th className="px-4 py-2 text-left text-white">Membership ID</th>
+                    <th className="px-4 py-2 text-left text-white">
+                      Membership ID
+                    </th>
                     <th className="px-4 py-2 text-left text-white">Year</th>
                   </tr>
                 </thead>
@@ -253,7 +271,9 @@ const QRScanner = () => {
                   {data.map((entry, index) => (
                     <tr key={index} className="bg-violet-800/30">
                       <td className="px-4 py-2 text-violet-100">{entry.name}</td>
-                      <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
+                      <td className="px-4 py-2 text-violet-100">
+                        {entry.membershipId}
+                      </td>
                       <td className="px-4 py-2 text-violet-100">
                         <select
                           value={entry.year || "1"}
@@ -276,7 +296,9 @@ const QRScanner = () => {
               </table>
             </div>
           ) : (
-            <p className="text-violet-300 text-sm text-center">No entries scanned yet.</p>
+            <p className="text-violet-300 text-sm text-center">
+              No entries scanned yet.
+            </p>
           )}
         </div>
 
