@@ -95,18 +95,12 @@ const QRScanner = () => {
   const frontCamera = videoDevices.find(device => device.label.toLowerCase().includes("front"))?.deviceId;
 
   const constraints = useMemo(() => {
-    if (isMobile) {
-      // Prefer rear camera on mobile
-      return rearCamera
-        ? { video: { deviceId: { exact: rearCamera } } }
-        : { video: { facingMode: { exact: "environment" } } }; // Fallback if label not available
-    } else {
-      // Prefer front camera on desktop
-      return frontCamera
-        ? { video: { deviceId: { exact: frontCamera } } }
-        : { video: true }; // Fallback to default
-    }
-  }, [isMobile, rearCamera, frontCamera]);
+    return {
+      video: isMobile
+        ? { facingMode: { exact: "environment" } } // Force rear camera on mobile
+        : { facingMode: "user" },                 // Use front camera on desktop
+    };
+  }, [isMobile]);
   
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
