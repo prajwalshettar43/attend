@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { CSVLink } from "react-csv";
 import { QrReader } from "react-qr-reader";
 
-// Floating Bubble Component
 const FloatingBubble = ({ size, speed, delay, opacity, left, top }) => (
   <div
     className="absolute rounded-full bg-violet-400"
@@ -23,10 +22,13 @@ const QRScanner = () => {
   const [error, setError] = useState("");
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
   const [isMobile, setIsMobile] = useState(false);
-  const [facingMode, setFacingMode] = useState("environment"); // default to rear
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [filename, setFilename] = useState("Attendance");
   const [description, setDescription] = useState("");
   const membersIdsRef = useRef(new Set());
+  const [scanAnimation, setScanAnimation] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const bubbles = useMemo(() => {
     return Array.from({ length: 25 }, (_, i) => {
@@ -73,27 +75,25 @@ const QRScanner = () => {
     setIsMobile(checkMobile());
   }, []);
 
-  const [videoDevices, setVideoDevices] = useState([]);
-
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
       const videoInputDevices = devices.filter((device) => device.kind === "videoinput");
       setVideoDevices(videoInputDevices);
+
+      const rearCam = videoInputDevices.find((device) => /back|rear/i.test(device.label));
+      if (rearCam) {
+        setSelectedDeviceId(rearCam.deviceId);
+      } else if (videoInputDevices.length > 0) {
+        setSelectedDeviceId(videoInputDevices[0].deviceId);
+      }
     });
   }, []);
 
-  const rearCamera = videoDevices.find((device) =>
-    device.label.toLowerCase().includes("back")
-  )?.deviceId;
-
   const constraints = useMemo(() => {
-    return {
-      video: {
-        facingMode: { exact: facingMode } // "environment" or "user"
-      }
-    };
-  }, [facingMode]);
-  
+    return selectedDeviceId
+      ? { video: { deviceId: selectedDeviceId } }
+      : { video: { facingMode: "environment" } };
+  }, [selectedDeviceId]);
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
@@ -172,164 +172,80 @@ const QRScanner = () => {
     { label: "Year", key: "year" },
   ];
 
-  const [scanAnimation, setScanAnimation] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-
   return (
-    <div
-      className="min-h-screen p-4 overflow-hidden relative"
-      style={{
-        background:
-          "radial-gradient(100% 100% at 50% 0%, rgb(52, 4, 91) 0%, rgb(10, 0, 17) 80%)",
-      }}
-    >
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {bubbles}
-      </div>
-
+    <div className="min-h-screen p-4 overflow-hidden relative" style={{ background: "radial-gradient(100% 100% at 50% 0%, rgb(52, 4, 91) 0%, rgb(10, 0, 17) 80%)" }}>
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">{bubbles}</div>
       <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
-        <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">
-          QR Attendance Scanner
-        </h1>
-
-        <div className="mb-4 flex flex-col md:flex-row gap-4">
-          <input
-            type="text"
-            placeholder="Filename (without .csv)"
-            value={filename}
-            onChange={(e) => setFilename(e.target.value)}
-            className="border border-violet-600 bg-black bg-opacity-30 text-white rounded-md px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all"
-          />
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="border border-violet-600 bg-black bg-opacity-30 text-white rounded-md px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all resize-none"
-          />
-        </div>
+        <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">QR Attendance Scanner</h1>
 
         <p className="text-sm text-gray-400 text-center mb-2">
-          {isMobile
-            ? `Using ${facingMode === "user" ? "front" : "rear"} camera (mobile)`
-            : "Using default camera (desktop)"}
+          {isMobile ? `Using ${selectedDeviceId ? "rear" : "default"} camera (mobile)` : "Using default camera (desktop)"}
         </p>
 
-        {isMobile && (
-          <div className="text-center mb-4">
-            <button
-              onClick={() =>
-                setFacingMode((prev) =>
-                  prev === "environment" ? "user" : "environment"
-                )
-              }
-            >
-              Switch to {facingMode === "environment" ? "Front" : "Rear"} Camera
-            </button>
-          </div>
-        )}
-
         <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
-          <div className="absolute inset-0">
-            <QrReader
-              constraints={constraints}
-              onResult={(result, error) => {
-                if (result) {
-                  handleScan({ text: result.text });
-                } else if (isMobile && error) {
-                  handleError(error);
-                }
-              }}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              videoStyle={{ width: "100%", height: "100%", objectFit: "cover" }}
-              ViewFinder={() => null}
-            />
-          </div>
-          {scanAnimation && (
-            <div
-              className="absolute left-0 right-0 bg-violet-500 h-1 w-full"
-              style={{ animation: "scan 1.5s linear" }}
-            />
-          )}
+          <QrReader
+            constraints={constraints}
+            onResult={(result, error) => {
+              if (result) handleScan({ text: result.text });
+              else if (isMobile && error) handleError(error);
+            }}
+            style={{ width: "100%", height: "100%" }}
+            videoStyle={{ width: "100%", height: "100%", objectFit: "cover" }}
+            ViewFinder={() => null}
+          />
+          {scanAnimation && <div className="absolute left-0 right-0 bg-violet-500 h-1 w-full" style={{ animation: "scan 1.5s linear" }} />}
           {showSuccess && (
             <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
               <div className="bg-black/50 p-4 rounded-full">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-12 w-12 text-green-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
             </div>
           )}
         </div>
 
-        {error && (
-          <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded text-center">
-            {error}
-          </div>
-        )}
+        {error && <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded text-center">{error}</div>}
         <p className="mt-2 text-center text-violet-300 text-sm">{debugMessage}</p>
 
         <div className="mt-8 bg-black bg-opacity-30 p-4 rounded-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-violet-300">
-              Scanned Entries
-            </h2>
-            <div className="bg-violet-900/50 text-violet-300 px-3 py-1 rounded-full text-sm">
-              Total: {data.length}
-            </div>
-          </div>
-
+          <h2 className="text-xl font-semibold text-violet-300 mb-4">Scanned Entries</h2>
           {data.length > 0 ? (
-            <div className="overflow-x-auto rounded-lg">
-              <table className="w-full table-auto border-collapse">
-                <thead className="bg-violet-700">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-white">Name</th>
-                    <th className="px-4 py-2 text-left text-white">Membership ID</th>
-                    <th className="px-4 py-2 text-left text-white">Year</th>
+            <table className="w-full table-auto border-collapse">
+              <thead className="bg-violet-700">
+                <tr>
+                  <th className="px-4 py-2 text-left text-white">Name</th>
+                  <th className="px-4 py-2 text-left text-white">Membership ID</th>
+                  <th className="px-4 py-2 text-left text-white">Year</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((entry, index) => (
+                  <tr key={index} className="bg-violet-800/30">
+                    <td className="px-4 py-2 text-violet-100">{entry.name}</td>
+                    <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
+                    <td className="px-4 py-2 text-violet-100">
+                      <select
+                        value={entry.year || "1"}
+                        onChange={(e) => {
+                          const updatedData = [...data];
+                          updatedData[index].year = e.target.value;
+                          setData(updatedData);
+                        }}
+                        className="bg-black bg-opacity-30 text-white border border-violet-600 rounded px-2 py-1 w-full"
+                      >
+                        <option value="1">Year 1</option>
+                        <option value="2">Year 2</option>
+                        <option value="3">Year 3</option>
+                        <option value="4">Year 4</option>
+                      </select>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {data.map((entry, index) => (
-                    <tr key={index} className="bg-violet-800/30">
-                      <td className="px-4 py-2 text-violet-100">{entry.name}</td>
-                      <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
-                      <td className="px-4 py-2 text-violet-100">
-                        <select
-                          value={entry.year || "1"}
-                          onChange={(e) => {
-                            const updatedData = [...data];
-                            updatedData[index].year = e.target.value;
-                            setData(updatedData);
-                          }}
-                          className="bg-black bg-opacity-30 text-white border border-violet-600 rounded px-2 py-1 w-full focus:outline-none"
-                        >
-                          <option value="1">Year 1</option>
-                          <option value="2">Year 2</option>
-                          <option value="3">Year 3</option>
-                          <option value="4">Year 4</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           ) : (
-            <p className="text-violet-300 text-sm text-center">
-              No entries scanned yet.
-            </p>
+            <p className="text-violet-300 text-sm text-center">No entries scanned yet.</p>
           )}
         </div>
 
@@ -339,7 +255,7 @@ const QRScanner = () => {
               data={data}
               headers={headers}
               filename={`${filename}.csv`}
-              className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700 transition"
+              className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700"
             >
               Download CSV
             </CSVLink>
