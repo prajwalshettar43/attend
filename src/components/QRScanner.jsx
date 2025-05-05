@@ -167,7 +167,7 @@ const QRScanner = () => {
     // Log real errors to console for debugging
     console.error("Scanner error:", err);
     
-    let errorMessage = "An error occurred while accessing the camera.";
+    let errorMessage = "";
     let debugMessage = "Failed to initialize scanner.";
     
     if (err.name === "NotAllowedError") {
@@ -299,14 +299,14 @@ const QRScanner = () => {
       html5QrCodeRef.current = html5QrCode;
 
       const config = {
-        fps: 10,
+        fps: 15, // Slightly higher for smoother scanning on mobile
         qrbox: {
-          width: 300,  // Increase from 250
-          height: 300, // Increase from 250
+          width: 200, // Smaller to fit mobile screens
+          height: 200, // Square to match typical QR code shapes
         },
-        aspectRatio: 16/9,  // Wider aspect ratio for more horizontal view
-        disableFlip: false,
-        verbose: false
+        aspectRatio: 1, // Square aspect ratio for better mobile compatibility
+        disableFlip: true, // Prevent camera flipping to avoid confusion
+        verbose: false, // Keep false to reduce console clutter
       };
 
       setIsScanning(true);
