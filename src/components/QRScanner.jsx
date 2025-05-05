@@ -73,11 +73,24 @@ const QRScanner = () => {
     setIsMobile(checkMobile());
   }, []);
 
+  const [videoDevices, setVideoDevices] = useState([]);
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      const videoInputDevices = devices.filter((device) => device.kind === "videoinput");
+      setVideoDevices(videoInputDevices);
+    });
+  }, []);
+
+  const rearCamera = videoDevices.find((device) =>
+    device.label.toLowerCase().includes("back")
+  )?.deviceId;
+
   const constraints = useMemo(() => {
     return isMobile
-      ? { video: { facingMode: { exact: facingMode } } }
+      ? { video: { deviceId: { exact: rearCamera || undefined }, facingMode: "environment" } }
       : { video: true };
-  }, [isMobile, facingMode]);
+  }, [isMobile, rearCamera]);
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
