@@ -23,16 +23,13 @@ const QRScanner = () => {
   const [error, setError] = useState("");
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
   const [isMobile, setIsMobile] = useState(false);
+  const [facingMode, setFacingMode] = useState("environment"); // default to rear
   const [filename, setFilename] = useState("Attendance");
   const [description, setDescription] = useState("");
   const membersIdsRef = useRef(new Set());
 
-  // camera devices and selection
-  const [videoDevices, setVideoDevices] = useState([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
-
-  const bubbles = useMemo(() =>
-    Array.from({ length: 25 }, (_, i) => {
+  const bubbles = useMemo(() => {
+    return Array.from({ length: 25 }, (_, i) => {
       const size = Math.floor(Math.random() * 30) + 20;
       const speed = Math.floor(Math.random() * 4) + 3;
       const delay = Math.random() * 2;
@@ -50,8 +47,8 @@ const QRScanner = () => {
           top={top}
         />
       );
-    }),
-  []);
+    });
+  }, []);
 
   useEffect(() => {
     const styleSheet = document.createElement("style");
@@ -70,111 +67,289 @@ const QRScanner = () => {
     document.head.appendChild(styleSheet);
 
     const checkMobile = () => {
-      const ua = navigator.userAgent.toLowerCase();
-      return /iphone|ipad|ipod|android|blackberry|windows phone/.test(ua);
+      const userAgent = navigator.userAgent.toLowerCase();
+      return /iphone|ipad|ipod|android|blackberry|windows phone/g.test(userAgent);
     };
     setIsMobile(checkMobile());
   }, []);
 
-  // enumerate devices
+  const [videoDevices, setVideoDevices] = useState([]);
+
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
-      const videoInputs = devices.filter(d => d.kind === 'videoinput');
-      setVideoDevices(videoInputs);
-      // auto-select back camera if available
-      const back = videoInputs.find(d => /back|rear/.test(d.label.toLowerCase()));
-      setSelectedDeviceId(back ? back.deviceId : videoInputs[0]?.deviceId);
+      const videoInputDevices = devices.filter((device) => device.kind === "videoinput");
+      setVideoDevices(videoInputDevices);
     });
   }, []);
 
-  // constraints
-  const constraints = useMemo(() => ({
-    video: selectedDeviceId
-      ? { deviceId: { exact: selectedDeviceId } }
-      : { facingMode: 'environment' }
-  }), [selectedDeviceId]);
+  const rearCamera = videoDevices.find((device) =>
+    device.label.toLowerCase().includes("back")
+  )?.deviceId;
 
-  const handleScan = ({ text }) => {
-    if (!text) return;
-    setDebugMessage(`Scanned data detected: ${text}`);
-    const parsed = parseVCARD(text);
-    if (parsed?.membershipId && !membersIdsRef.current.has(parsed.membershipId)) {
-      setData(prev => [...prev, { ...parsed, year: '1' }]);
-      membersIdsRef.current.add(parsed.membershipId);
-      setError('');
+  const constraints = useMemo(() => {
+    if (isMobile) {
+      // Use the rear camera if found, otherwise use facingMode: "environment"
+      return {
+        video: {
+          deviceId: rearCamera || undefined,
+          facingMode: rearCamera ? undefined : "environment",
+        },
+      };
+    } else {
+      return { video: true }; // Use the default camera for non-mobile devices
+    }
+  }, [isMobile, rearCamera]);
+
+  const handleScan = (scannedData) => {
+    if (!scannedData?.text) return;
+
+    setDebugMessage(`Scanned data detected: ${scannedData.text}`);
+    const parsedData = parseVCARD(scannedData.text);
+
+    if (parsedData && parsedData.membershipId) {
+      if (!membersIdsRef.current.has(parsedData.membershipId)) {
+        setData((prevData) => [...prevData, { ...parsedData, year: "1" }]);
+        membersIdsRef.current.add(parsedData.membershipId);
+        setScanAnimation(true);
+        setShowSuccess(true);
+        setTimeout(() => setScanAnimation(false), 1500);
+        setTimeout(() => setShowSuccess(false), 2000);
+        setError("");
+      } else {
+        setDebugMessage(`Duplicate detected: ${parsedData.membershipId}`);
+      }
+    } else {
+      setError("Invalid QR code format.");
     }
   };
 
   const handleError = (err) => {
-    console.error(err);
-    setError(err.message);
+    console.error("Scanner error:", err);
+    let errorMessage = "An error occurred while accessing the camera.";
+    let debugMessage = "Failed to initialize scanner.";
+
+    if (err.name === "NotAllowedError") {
+      errorMessage = "Camera access denied. Please grant permissions in your browser settings.";
+      debugMessage = "Camera permission denied.";
+    } else if (err.name === "NotFoundError") {
+      errorMessage = "No camera found. Please connect a camera device.";
+      debugMessage = "No camera detected.";
+    } else if (err.name === "NotReadableError") {
+      errorMessage = "Camera is in use by another application.";
+      debugMessage = "Camera unavailable.";
+    }
+
+    setError(errorMessage);
+    setDebugMessage(debugMessage);
   };
 
-  const parseVCARD = (scanned) => {
+  const parseVCARD = (scannedData) => {
     try {
-      if (scanned.includes('BEGIN:VCARD')) {
-        const nm = scanned.match(/NICKNAME:([^ ]+)/)?.[1];
-        const id = scanned.match(/Member#:\s*(\d+)/)?.[1];
-        if (nm && id) return { name: nm.trim(), membershipId: id.trim() };
+      if (scannedData.includes("BEGIN:VCARD")) {
+        const nicknameMatch = scannedData.match(/NICKNAME:([^ ]+)/);
+        const membershipIdMatch = scannedData.match(/Member#: (\d+)/);
+        if (nicknameMatch && membershipIdMatch) {
+          return {
+            name: nicknameMatch[1].trim(),
+            membershipId: membershipIdMatch[1].trim(),
+          };
+        }
       }
-    } catch {}
+      if (scannedData.includes("Member Name:")) {
+        const nameMatch = scannedData.match(/Member Name:([^,]+)/);
+        const memberNumberMatch = scannedData.match(/Member Number:([^,]+)/);
+        if (nameMatch && memberNumberMatch) {
+          return {
+            name: nameMatch[1].trim(),
+            membershipId: memberNumberMatch[1].trim(),
+          };
+        }
+      }
+    } catch (e) {
+      console.error("Error parsing scanned data:", e);
+    }
     return null;
   };
 
   const headers = [
-    { label: 'Name', key: 'name' },
-    { label: 'Membership ID', key: 'membershipId' },
-    { label: 'Year', key: 'year' },
+    { label: "Name", key: "name" },
+    { label: "Membership ID", key: "membershipId" },
+    { label: "Year", key: "year" },
   ];
 
+  const [scanAnimation, setScanAnimation] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
   return (
-    <div className="min-h-screen p-4 relative" style={{ background: 'radial-gradient(100% 100% at 50% 0%, #34045B 0%, #0A0011 80%)' }}>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">{bubbles}</div>
-      <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl p-6 z-10 relative border border-violet-500/30">
-        <h1 className="text-4xl text-violet-300 text-center mb-6">QR Attendance Scanner</h1>
+    <div
+      className="min-h-screen p-4 overflow-hidden relative"
+      style={{
+        background:
+          "radial-gradient(100% 100% at 50% 0%, rgb(52, 4, 91) 0%, rgb(10, 0, 17) 80%)",
+      }}
+    >
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {bubbles}
+      </div>
+
+      <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
+        <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">
+          QR Attendance Scanner
+        </h1>
+
         <div className="mb-4 flex flex-col md:flex-row gap-4">
           <input
-            className="w-full px-4 py-2 bg-black bg-opacity-30 border border-violet-600 text-white rounded"
-            value={filename} onChange={e => setFilename(e.target.value)} placeholder="Filename" />
+            type="text"
+            placeholder="Filename (without .csv)"
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            className="border border-violet-600 bg-black bg-opacity-30 text-white rounded-md px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all"
+          />
           <textarea
-            className="w-full px-4 py-2 bg-black bg-opacity-30 border border-violet-600 text-white rounded"
-            rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
+            placeholder="Description (optional)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            className="border border-violet-600 bg-black bg-opacity-30 text-white rounded-md px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all resize-none"
+          />
         </div>
-        {videoDevices.length > 1 && (
-          <div className="mb-4 text-center">
-            <select
-              className="px-3 py-2 bg-black bg-opacity-30 border border-violet-600 text-white rounded"
-              value={selectedDeviceId || ''}
-              onChange={e => setSelectedDeviceId(e.target.value)}>
-              {videoDevices.map(d => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
-              ))}
-            </select>
+
+        <p className="text-sm text-gray-400 text-center mb-2">
+          {isMobile
+            ? `Using ${facingMode === "user" ? "front" : "rear"} camera (mobile)`
+            : "Using default camera (desktop)"}
+        </p>
+
+        {isMobile && (
+          <div className="text-center mb-4">
+            <button
+              onClick={() =>
+                setFacingMode((prev) =>
+                  prev === "environment" ? "user" : "environment"
+                )
+              }
+              className="bg-violet-700 hover:bg-violet-800 text-white py-1 px-4 rounded-md transition"
+            >
+              Switch to {facingMode === "environment" ? "Front" : "Rear"} Camera
+            </button>
           </div>
         )}
-        <div className="w-full max-w-md mx-auto aspect-video border-4 border-violet-500 rounded overflow-hidden relative">
-          <QrReader
-            constraints={constraints}
-            onResult={(res, err) => res ? handleScan(res) : err && handleError(err)}
-            videoStyle={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        </div>
-        {error && <div className="mt-4 p-2 bg-red-900 text-red-400 rounded text-center">{error}</div>}
-        <div className="mt-4 bg-black bg-opacity-30 p-4 rounded">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl text-violet-300">Scanned Entries</h2>
-            <span className="text-violet-300">Total: {data.length}</span>
+
+        <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
+          <div className="absolute inset-0">
+            <QrReader
+              constraints={constraints}
+              onResult={(result, error) => {
+                if (result) {
+                  handleScan({ text: result.text });
+                } else if (isMobile && error) {
+                  handleError(error);
+                }
+              }}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              videoStyle={{ width: "100%", height: "100%", objectFit: "cover" }}
+              ViewFinder={() => null}
+            />
           </div>
-          {data.length ? (
-            <table className="w-full text-white">
-              <thead className="bg-violet-700"><tr><th>Name</th><th>ID</th><th>Year</th></tr></thead>
-              <tbody>{data.map((e,i)=>(
-                <tr key={i} className="bg-violet-800/30"><td>{e.name}</td><td>{e.membershipId}</td><td>{e.year}</td></tr>
-              ))}</tbody>
-            </table>
-          ) : <p className="text-violet-300 text-center">No entries scanned.</p>}
+          {scanAnimation && (
+            <div
+              className="absolute left-0 right-0 bg-violet-500 h-1 w-full"
+              style={{ animation: "scan 1.5s linear" }}
+            />
+          )}
+          {showSuccess && (
+            <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+              <div className="bg-black/50 p-4 rounded-full">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-12 w-12 text-green-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="mt-4 text-center">
-          {data.length>0 && <CSVLink data={data} headers={headers} filename={`${filename}.csv`} className="px-4 py-2 bg-violet-600 text-white rounded">Download CSV</CSVLink>}
+
+        {error && (
+          <div className="mt-4 p-3 bg-red-900/30 text-red-400 rounded text-center">
+            {error}
+          </div>
+        )}
+        <p className="mt-2 text-center text-violet-300 text-sm">{debugMessage}</p>
+
+        <div className="mt-8 bg-black bg-opacity-30 p-4 rounded-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-violet-300">
+              Scanned Entries
+            </h2>
+            <div className="bg-violet-900/50 text-violet-300 px-3 py-1 rounded-full text-sm">
+              Total: {data.length}
+            </div>
+          </div>
+
+          {data.length > 0 ? (
+            <div className="overflow-x-auto rounded-lg">
+              <table className="w-full table-auto border-collapse">
+                <thead className="bg-violet-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-white">Name</th>
+                    <th className="px-4 py-2 text-left text-white">Membership ID</th>
+                    <th className="px-4 py-2 text-left text-white">Year</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((entry, index) => (
+                    <tr key={index} className="bg-violet-800/30">
+                      <td className="px-4 py-2 text-violet-100">{entry.name}</td>
+                      <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
+                      <td className="px-4 py-2 text-violet-100">
+                        <select
+                          value={entry.year || "1"}
+                          onChange={(e) => {
+                            const updatedData = [...data];
+                            updatedData[index].year = e.target.value;
+                            setData(updatedData);
+                          }}
+                          className="bg-black bg-opacity-30 text-white border border-violet-600 rounded px-2 py-1 w-full focus:outline-none"
+                        >
+                          <option value="1">Year 1</option>
+                          <option value="2">Year 2</option>
+                          <option value="3">Year 3</option>
+                          <option value="4">Year 4</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-violet-300 text-sm text-center">
+              No entries scanned yet.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 text-center">
+          {data.length > 0 && (
+            <CSVLink
+              data={data}
+              headers={headers}
+              filename={`${filename}.csv`}
+              className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700 transition"
+            >
+              Download CSV
+            </CSVLink>
+          )}
         </div>
       </div>
     </div>
