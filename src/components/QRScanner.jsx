@@ -87,18 +87,13 @@ const QRScanner = () => {
   )?.deviceId;
 
   const constraints = useMemo(() => {
-    if (isMobile) {
-      // Use the rear camera if found, otherwise use facingMode: "environment"
-      return {
-        video: {
-          deviceId: rearCamera || undefined,
-          facingMode: rearCamera ? undefined : "environment",
-        },
-      };
-    } else {
-      return { video: true }; // Use the default camera for non-mobile devices
-    }
-  }, [isMobile, rearCamera]);
+    return {
+      video: {
+        facingMode: { exact: facingMode } // "environment" or "user"
+      }
+    };
+  }, [facingMode]);
+  
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
@@ -228,7 +223,6 @@ const QRScanner = () => {
                   prev === "environment" ? "user" : "environment"
                 )
               }
-              className="bg-violet-700 hover:bg-violet-800 text-white py-1 px-4 rounded-md transition"
             >
               Switch to {facingMode === "environment" ? "Front" : "Rear"} Camera
             </button>
