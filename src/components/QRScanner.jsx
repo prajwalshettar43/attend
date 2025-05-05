@@ -301,8 +301,8 @@ const QRScanner = () => {
       const config = {
         fps: 15, // Slightly higher for smoother scanning on mobile
         qrbox: {
-          width: 200, // Smaller to fit mobile screens
-          height: 200, // Square to match typical QR code shapes
+          width: 300, // Smaller to fit mobile screens
+          height: 300, // Square to match typical QR code shapes
         },
         aspectRatio: 1, // Square aspect ratio for better mobile compatibility
         disableFlip: true, // Prevent camera flipping to avoid confusion
