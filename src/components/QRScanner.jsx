@@ -92,10 +92,11 @@ const QRScanner = () => {
   }, []);
 
   const rearCamera = videoDevices.find(device => device.label.toLowerCase().includes("back"))?.deviceId;
+  const frontCamera = videoDevices.find(device => device.label.toLowerCase().includes("front"))?.deviceId;
 
-  const constraints = {
-    video: rearCamera ? { deviceId: { exact: rearCamera } } : { facingMode: "environment" },
-  };
+  const constraints = isMobile
+    ? { video: { deviceId: { exact: rearCamera } } } // Use back camera on mobile
+    : { video: frontCamera ? { deviceId: { exact: frontCamera } } : { facingMode: "environment" } }; // Use front camera on desktop
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
@@ -121,6 +122,7 @@ const QRScanner = () => {
       setError("Invalid QR code format.");
     }
   };
+
 
   const handleError = (err) => {
     console.error("Scanner error:", err);
