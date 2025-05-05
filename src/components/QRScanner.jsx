@@ -26,11 +26,8 @@ const QRScanner = () => {
   const [debugMessage, setDebugMessage] = useState("Initializing scanner...");
   const [isMobile, setIsMobile] = useState(false);
   const membersIdsRef = useRef(new Set());
-  const [videoDevices, setVideoDevices] = useState([]);
   const [filename, setFilename] = useState("Attendance");
   const [description, setDescription] = useState("");
-  const [scanAnimation, setScanAnimation] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   const bubbles = useMemo(() => {
     const bubblesArray = [];
@@ -69,11 +66,6 @@ const QRScanner = () => {
         50% { opacity: 0.5; }
         100% { height: 0; top: 100%; opacity: 0.7; }
       }
-      @keyframes pulse {
-        0% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.05); opacity: 0.8; }
-        100% { transform: scale(1); opacity: 1; }
-      }
     `;
     document.head.appendChild(styleSheet);
 
@@ -84,24 +76,11 @@ const QRScanner = () => {
     setIsMobile(checkMobile());
   }, []);
 
-  useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then((devices) => {
-      const videoInputDevices = devices.filter(device => device.kind === "videoinput");
-      setVideoDevices(videoInputDevices);
-    });
-  }, []);
+  // Constraints: Use front camera for mobile, default for PC
+  const constraints = useMemo(() => ({
+    video: isMobile ? { facingMode: "user" } : true
+  }), [isMobile]);
 
-  const rearCamera = videoDevices.find(device => device.label.toLowerCase().includes("back"))?.deviceId;
-  const frontCamera = videoDevices.find(device => device.label.toLowerCase().includes("front"))?.deviceId;
-
-  const constraints = useMemo(() => {
-    return {
-      video: isMobile
-        ? { facingMode: { exact: "environment" } } // Force rear camera on mobile
-        : { facingMode: "user" },                 // Use front camera on desktop
-    };
-  }, [isMobile]);
-  
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
 
@@ -110,14 +89,12 @@ const QRScanner = () => {
 
     if (parsedData && parsedData.membershipId) {
       if (!membersIdsRef.current.has(parsedData.membershipId)) {
-        setData((prevData) => [...prevData, { ...parsedData, year: "" }]);
+        setData((prevData) => [...prevData, { ...parsedData, year: "1" }]);
         membersIdsRef.current.add(parsedData.membershipId);
         setScanAnimation(true);
         setShowSuccess(true);
-
         setTimeout(() => setScanAnimation(false), 1500);
         setTimeout(() => setShowSuccess(false), 2000);
-
         setError("");
       } else {
         setDebugMessage(`Duplicate detected: ${parsedData.membershipId}`);
@@ -127,15 +104,24 @@ const QRScanner = () => {
     }
   };
 
-
   const handleError = (err) => {
     console.error("Scanner error:", err);
-    setError(
-      isMobile
-        ? "An error occurred while accessing the camera. Please grant camera permissions and use a supported browser."
-        : "An error occurred while accessing the camera. Please check camera permissions."
-    );
-    setDebugMessage("Failed to initialize scanner. Please check camera permissions.");
+    let errorMessage = "An error occurred while accessing the camera.";
+    let debugMessage = "Failed to initialize scanner.";
+
+    if (err.name === "NotAllowedError") {
+      errorMessage = "Camera access denied. Please grant permissions in your browser settings.";
+      debugMessage = "Camera permission denied.";
+    } else if (err.name === "NotFoundError") {
+      errorMessage = "No camera found. Please connect a camera device.";
+      debugMessage = "No camera detected.";
+    } else if (err.name === "NotReadableError") {
+      errorMessage = "Camera is in use by another application.";
+      debugMessage = "Camera unavailable.";
+    }
+
+    setError(errorMessage);
+    setDebugMessage(debugMessage);
   };
 
   const parseVCARD = (scannedData) => {
@@ -143,7 +129,6 @@ const QRScanner = () => {
       if (scannedData.includes("BEGIN:VCARD")) {
         const nicknameMatch = scannedData.match(/NICKNAME:([^ ]+)/);
         const membershipIdMatch = scannedData.match(/Member#: (\d+)/);
-
         if (nicknameMatch && membershipIdMatch) {
           return {
             name: nicknameMatch[1].trim(),
@@ -151,11 +136,9 @@ const QRScanner = () => {
           };
         }
       }
-
       if (scannedData.includes("Member Name:")) {
         const nameMatch = scannedData.match(/Member Name:([^,]+)/);
         const memberNumberMatch = scannedData.match(/Member Number:([^,]+)/);
-
         if (nameMatch && memberNumberMatch) {
           return {
             name: nameMatch[1].trim(),
@@ -166,7 +149,6 @@ const QRScanner = () => {
     } catch (e) {
       console.error("Error parsing scanned data:", e);
     }
-
     return null;
   };
 
@@ -176,6 +158,9 @@ const QRScanner = () => {
     { label: "Year", key: "year" },
   ];
 
+  const [scanAnimation, setScanAnimation] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
   return (
     <div className="min-h-screen p-4 overflow-hidden relative"
       style={{
@@ -184,10 +169,8 @@ const QRScanner = () => {
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {bubbles}
       </div>
-
       <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
         <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">QR Attendance Scanner</h1>
-
         <div className="mb-4 flex flex-col md:flex-row gap-4">
           <input
             type="text"
@@ -203,11 +186,10 @@ const QRScanner = () => {
             rows={2}
             className="border border-violet-600 bg-black bg-opacity-30 text-white rounded-md px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all resize-none"
           />
-
         </div>
 
         <p className="text-sm text-gray-400 text-center mb-2">
-          {isMobile ? "Using rear camera (mobile)" : "Using front camera (desktop)"}
+          {isMobile ? "Using front camera (mobile)" : "Using default camera (desktop)"}
         </p>
 
         <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
@@ -215,7 +197,13 @@ const QRScanner = () => {
             <QrReader
               constraints={constraints}
               onResult={(result, error) => {
-                if (result) handleScan({ text: result?.text });
+                if (result) {
+                  handleScan({ text: result.text });
+                } else if (!isMobile && error) {
+                  console.warn("Scanner warning (ignored on PC):", error.message);
+                } else if (isMobile && error) {
+                  handleError(error);
+                }
               }}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
               videoStyle={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -261,24 +249,24 @@ const QRScanner = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((item, index) => (
-                    <tr key={index} className="bg-black bg-opacity-20 border-b border-violet-800 hover:bg-violet-900/20 transition-colors">
-                      <td className="px-4 py-2 text-white">{item.name}</td>
-                      <td className="px-4 py-2 text-white">{item.membershipId}</td>
-                      <td className="px-4 py-2 text-white">
+                  {data.map((entry, index) => (
+                    <tr key={index} className="bg-violet-800/30">
+                      <td className="px-4 py-2 text-violet-100">{entry.name}</td>
+                      <td className="px-4 py-2 text-violet-100">{entry.membershipId}</td>
+                      <td className="px-4 py-2 text-violet-100">
                         <select
-                          value={item.year || ""}
+                          value={entry.year || "1"}
                           onChange={(e) => {
                             const updatedData = [...data];
                             updatedData[index].year = e.target.value;
                             setData(updatedData);
                           }}
-                          className="bg-black bg-opacity-50 border border-violet-500 rounded-md px-2 py-1 text-white"
+                          className="bg-black bg-opacity-30 text-white border border-violet-600 rounded px-2 py-1 w-full focus:outline-none"
                         >
-                          <option value="1">1st Year</option>
-                          <option value="2">2nd Year</option>
-                          <option value="3">3rd Year</option>
-                          <option value="4">4th Year</option>
+                          <option value="1">Year 1</option>
+                          <option value="2">Year 2</option>
+                          <option value="3">Year 3</option>
+                          <option value="4">Year 4</option>
                         </select>
                       </td>
                     </tr>
@@ -287,33 +275,20 @@ const QRScanner = () => {
               </table>
             </div>
           ) : (
-            <p className="text-violet-300 text-center p-6">No data scanned yet.</p>
+            <p className="text-violet-300 text-sm text-center">No entries scanned yet.</p>
           )}
+        </div>
 
+        <div className="mt-6 text-center">
           {data.length > 0 && (
-            <div className="text-center mt-6">
-              <CSVLink
-                data={[
-                  [`Description: ${description}`], // First row
-                  headers.map(h => h.label),       // Column headers
-                  ...data.map(row => [row.name, row.membershipId, row.year]) // Data rows
-                ]}
-                filename={`${filename}.csv`}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-md transition-all shadow-lg hover:shadow-violet-500/20 inline-flex items-center"
-                style={{ animation: "pulse 2s infinite" }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download CSV
-              </CSVLink>
-
-              {description && (
-                <div className="mt-4 p-3 bg-violet-900/20 rounded-lg text-sm text-violet-300 inline-block">
-                  Description: {description}
-                </div>
-              )}
-            </div>
+            <CSVLink
+              data={data}
+              headers={headers}
+              filename={`${filename}.csv`}
+              className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700 transition"
+            >
+              Download CSV
+            </CSVLink>
           )}
         </div>
       </div>
