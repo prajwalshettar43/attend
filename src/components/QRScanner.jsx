@@ -78,8 +78,9 @@ const QRScanner = () => {
 
   // Constraints: Use front camera for mobile, default for PC
   const constraints = useMemo(() => ({
-    video: isMobile ? { facingMode: "user" } : true
+    video: isMobile ? { facingMode: { exact: "environment" } } : true
   }), [isMobile]);
+  
 
   const handleScan = (scannedData) => {
     if (!scannedData?.text) return;
