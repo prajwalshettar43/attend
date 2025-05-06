@@ -427,7 +427,7 @@ const QRScanner = () => {
           {isMobile ? "Using rear camera (mobile)" : "Using default camera (desktop)"}
         </p>
 
-        <div className="mx-auto w-full border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
+        <div className="mx-auto w-full max-w-xs aspect-square border-4 border-violet-500 rounded-xl overflow-hidden relative">
           <div id="qr-video-container" className="w-full h-full"></div>
 
           {scanAnimation && (
