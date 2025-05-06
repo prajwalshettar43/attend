@@ -168,7 +168,7 @@ const QRScanner = () => {
     console.error("Scanner error:", err);
     
     let errorMessage = "";
-    let debugMessage = "Failed to initialize scanner.";
+    let debugMessage = "";
     
     if (err.name === "NotAllowedError") {
       errorMessage = "Camera access denied. Please grant permissions in your browser settings.";
@@ -301,8 +301,8 @@ const QRScanner = () => {
       const config = {
         fps: 15, // Slightly higher for smoother scanning on mobile
         qrbox: {
-          width: 350, // Smaller to fit mobile screens
-          height: 350, // Square to match typical QR code shapes
+          width: 650, // Smaller to fit mobile screens
+          height: 650, // Square to match typical QR code shapes
         },
         aspectRatio: 1, // Square aspect ratio for better mobile compatibility
         disableFlip: true, // Prevent camera flipping to avoid confusion
@@ -404,7 +404,7 @@ const QRScanner = () => {
       </div>
       <div className="max-w-3xl mx-auto bg-black/30 backdrop-blur-sm rounded-xl shadow-lg p-6 relative z-10 border border-violet-500/30">
         <h1 className="text-4xl font-bold text-violet-300 text-center mb-6">
-          QR Attendance Scanner
+          IEEE Attendance Scanner
         </h1>
         <div className="mb-4 flex flex-col md:flex-row gap-4">
           <input
@@ -427,7 +427,7 @@ const QRScanner = () => {
           {isMobile ? "Using rear camera (mobile)" : "Using default camera (desktop)"}
         </p>
 
-        <div className="mx-auto w-full max-w-md border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
+        <div className="mx-auto w-full border-4 border-violet-500 rounded-xl overflow-hidden relative aspect-video">
           <div id="qr-video-container" className="w-full h-full"></div>
 
           {scanAnimation && (
