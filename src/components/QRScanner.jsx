@@ -371,6 +371,26 @@ const QRScanner = () => {
     { label: "Year", key: "year" },
   ];
 
+  const downloadCSV = () => {
+    // Create CSV content with description at the top
+    let csvContent = `Description: ${description}\n\n`;
+    csvContent += `Name,Membership ID,Year\n`;
+    
+    // Add data rows
+    data.forEach(entry => {
+      csvContent += `${entry.name},${entry.membershipId},${entry.year}\n`;
+    });
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${filename}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   return (
     <div
       className="min-h-screen p-4 overflow-hidden relative"
@@ -507,14 +527,12 @@ const QRScanner = () => {
 
         <div className="mt-6 text-center">
           {data.length > 0 && (
-            <CSVLink
-              data={data}
-              headers={headers}
-              filename={`${filename}.csv`}
-              className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700 transition"
-            >
-              Download CSV
-            </CSVLink>
+            <button
+            onClick={downloadCSV}
+            className="inline-block bg-violet-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-violet-700 transition"
+          >
+            Download CSV
+          </button>
           )}
         </div>
       </div>
